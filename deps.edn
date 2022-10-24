@@ -3,5 +3,5 @@
  :aliases
  {:dev {:extra-paths ["dev"]}
   :test {:extra-deps {nubank/matcher-combinators {:mvn/version "3.3.1"}}
-         :extra-paths ["test"]
-         :exec-fn kaocha.runner/exec-fn}}}
+         :extra-paths ["test" "dev"]
+         :exec-fn user/exec-fn}}}
