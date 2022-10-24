@@ -1,0 +1,7 @@
+{:deps {io.github.nextjournal/clerk {:mvn/version "0.11.603"}
+        lambdaisland/kaocha {:mvn/version "1.66.1034"}}
+ :aliases
+ {:dev {:extra-paths ["dev"]}
+  :test {:extra-deps {nubank/matcher-combinators {:mvn/version "3.3.1"}}
+         :extra-paths ["test"]
+         :exec-fn kaocha.runner/exec-fn}}}
