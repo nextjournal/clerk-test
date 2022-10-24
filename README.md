@@ -1,4 +1,4 @@
-# nextjournal.clerk.kaocha
+# 🍵 clerk-kaocha
 
 A [Clerk](https://github.com/nextjournal/clerk) test report and utilities [kaocha](https://github.com/lambdaisland/kaocha).
 
