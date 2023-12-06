@@ -1,11 +1,7 @@
 {:deps {io.github.nextjournal/clerk {:git/sha "ff2bf8b0b5d596286fb1d22408b14456fee2dbf7"}
-
         ;; TODO: check if needed
-        nubank/matcher-combinators {:mvn/version "3.3.1"}
-        #_#_
-        lambdaisland/kaocha {:mvn/version "1.66.1034"}}
+        nubank/matcher-combinators {:mvn/version "3.3.1"}}
  :aliases
  {:dev {:extra-paths ["dev" "test"]}
-  :test {:extra-deps {nubank/matcher-combinators {:mvn/version "3.3.1"}}
-         :extra-paths ["test" "dev"]
+  :test {:extra-paths ["dev" "test"]
          :exec-fn user/exec-fn}}}

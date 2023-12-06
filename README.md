@@ -10,9 +10,9 @@ A [Clerk](https://github.com/nextjournal/clerk) test reporter for clojure.test.
 
 ```clojure 
 (ns user
-  (:require [nextjournal.clerk :as clerk]
-            ...require your tests...
-            [clojure.test :as test])
+  (:require ...your tests...
+            [clojure.test :as test]
+            [nextjournal.clerk :as clerk])
 
 (clerk/serve! {:port 7788})
 
