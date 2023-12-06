@@ -23,7 +23,7 @@
       (testing "and I set flex-basis..."
         (is true) (is true) (is true) (is true) (is true)))))
 
-(deftest ^:kaocha/skip all-passing
+(deftest ^:skip all-passing
   (testing "let them all pass"
     (is true)
     (is true)
@@ -31,7 +31,7 @@
     (is true)
     (is true)))
 
-(deftest ^:kaocha/pending some-other-test
+(deftest ^:pending some-other-test
   (is true) (is true)
   (testing "should fail somewhere"
     (is true)
