@@ -1,8 +1,8 @@
-# 🍵 clerk-kaocha
+# 👩‍🔬 nextjournal.clerk.test
 
-A [Clerk](https://github.com/nextjournal/clerk) test report and utilities [kaocha](https://github.com/lambdaisland/kaocha).
+A [Clerk](https://github.com/nextjournal/clerk) test reporter for clojure.test.
 
-https://user-images.githubusercontent.com/1078464/196944993-bcf28cb0-037c-4073-9cf2-837f9b89c690.mp4
+## TODO: new video
 
 # Usage
 
@@ -11,12 +11,14 @@ https://user-images.githubusercontent.com/1078464/196944993-bcf28cb0-037c-4073-9
 ```clojure 
 (ns user
   (:require [nextjournal.clerk :as clerk]
-            [nextjournal.clerk.kaocha :as clerk.kaocha]
-            [kaocha.repl])
+            ...require your tests...
+            [clojure.test :as test])
 
-(clerk/serve!)
+(clerk/serve! {:port 7788})
 
 (clerk/show! 'nextjournal.clerk.kaocha)
 
-(kaocha.repl/run :unit {:reporter [clerk.kaocha/report]})
+(binding [test/report clerk.test/report]
+  (test/run-tests (the-ns 'test-1)
+                  (the-ns 'test-2)))
 ```

@@ -1,5 +1,5 @@
-;; # 🍵 Kaocha Test Report
-(ns nextjournal.clerk.kaocha
+;; # 👩‍🔬 Clerk Test Report
+(ns nextjournal.clerk.test
   {:nextjournal.clerk/visibility {:code :hide :result :hide}
    :nextjourna.clerk/no-cache true}
   (:require [babashka.fs :as fs]
@@ -82,6 +82,15 @@
         (update-test-var (symbol current-test-var)
                          #(update % :assertions into ctx-items)))))
 
+(defn update-summary [state {:as event :keys [type]}]
+  (update state :summary
+          (fn [m]
+            (cond
+              (some #{type} [:pass :error]) (update m type (fnil inc 0))
+              (= :begin-test-var type) (update m :test (fnil inc 0))
+              (= :fail type) (update m :fail (fnil inc 0))
+              :else m))))
+
 ;;(kaocha.hierarchy/derive! :pass :assertion)
 ;;(kaocha.hierarchy/derive! :fail :assertion)
 ;;(kaocha.hierarchy/derive! :error :assertion)
@@ -97,19 +106,19 @@
 (defmethod build-test-state :begin-test-ns [state event]
   (update-test-ns state (ns-name (:ns event)) #(assoc % :status :executing)))
 
-(defmethod build-test-state :begin-test-var [state {:keys [var]}]
+(defmethod build-test-state :begin-test-var [state {:as event :keys [var]}]
   (-> state
+      (update-summary event)
       (assoc :current-test-var var)
       (update-test-var (symbol var) #(assoc % :status :executing))))
 
 (defn update-var-assertions [{:as state :keys [current-test-var]} event]
   (-> state
       update-contexts
+      (update-summary event)
       (update-test-var (symbol current-test-var) #(update % :assertions conj (->assertion-data current-test-var event)))))
 
-(defmethod build-test-state :pass [state event]
-  (prn :pass (:type event))
-  (update-var-assertions state event))
+(defmethod build-test-state :pass [state event] (update-var-assertions state event))
 
 (defmethod build-test-state :fail [state event] (update-var-assertions state event))
 
@@ -125,29 +134,24 @@
 (defmethod build-test-state :end-test-ns [state {:keys [ns]}]
   (update-test-ns state (ns-name ns) #(assoc % :status (get-coll-status (:test-vars %)))))
 
+(defn report [event]
+  (swap! !test-run-events conj event)
+  (swap! !test-report-state #'build-test-state event)
+  (with-out-str
+    (clerk/recompute!)))
+
 (comment
   (do
     (reset-state!)
-    (binding [t/report (fn report [{:as event :keys [type]}]
-                         #_(prn :event type event)
-                         (swap! !test-run-events conj event)
-                         (swap! !test-report-state #'build-test-state event)
-                         (with-out-str
-                           (clerk/recompute!)))]
-      (t/run-tests (the-ns 'demo.a-test))))
+    (binding [t/report report]
+      (t/run-tests (the-ns 'demo.a-test)
+                   (the-ns 'demo.b-test)
+                   (the-ns 'demo.c-test))
+      #_ (t/run-all-tests)))
 
   (remove-all-methods build-test-state)
   (ns-unmap *ns* 'build-test-state)
-  (test-plan)
-
-  ;; TODO
-  (update :summary
-          (fn [m]
-            (cond
-              (some #{type} [:pass :error :kaocha/pending]) (update m type (fnil inc 0))
-              (kaocha.hierarchy/isa? type :kaocha/begin-test) (update m :test (fnil inc 0))
-              (kaocha.hierarchy/fail-type? event) (update m :fail (fnil inc 0))
-              :else m))))
+  (test-plan))
 
 (defn bg-class [status]
   (case status
