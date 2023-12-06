@@ -1,15 +1,28 @@
 (ns user
-  (:require [kaocha.repl]
-            [kaocha.runner]
+  (:require [clojure.test :as test]
+            demo.a-test
+            demo.b-test
+            demo.c-test
             [nextjournal.clerk :as clerk]
-            [nextjournal.clerk.kaocha :as clerk.kaocha]))
+            [nextjournal.clerk.test :as clerk.test]))
 
 (defn exec-fn [m]
-  (clerk/serve! {:port 8888 :browse? true})
-  (clerk/show! 'nextjournal.clerk.kaocha)
-  (kaocha.runner/exec-fn {:reporter [clerk.kaocha/report]}))
+  (clerk/serve! {:port 8888 :host "localhost" :browse? true})
+  (clerk/show! 'nextjournal.clerk.test)
+  #_
+  (kaocha.runner/exec-fn {:reporter [clerk.kaocha/report]})
+  (binding [test/report clerk.test/report]
+    (test/run-all-tests #"demo\..\-test")))
 
 (comment
-  (clerk/serve! {})
-  (clerk/show! 'nextjournal.clerk.kaocha)
+
+  (clerk/serve! {:port 7788})
+  (clerk/show! 'nextjournal.clerk.test)
+  (clerk.test/reset-state!)
+
+  (binding [test/report clerk.test/report]
+    (test/run-all-tests #"demo\..\-test"))
+
+  ;; originally used to be a reported for lambdaisland/kaocha {:mvn/version "1.66.1034"}
+  #_
   (kaocha.repl/run :unit {:reporter [clerk.kaocha/report]}))
