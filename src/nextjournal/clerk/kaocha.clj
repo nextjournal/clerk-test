@@ -3,7 +3,7 @@
   {:nextjournal.clerk/visibility {:code :hide :result :hide}
    :nextjourna.clerk/no-cache true}
   (:require [babashka.fs :as fs]
-            [clojure.test :as t :refer [deftest testing is]]
+            [clojure.test :as t]
             [matcher-combinators.test]
             [nextjournal.clerk :as clerk]
             [nextjournal.clerk.builder-ui :as builder-ui]
@@ -53,42 +53,6 @@
   (reset! !test-report-state (initial-state))
   (clerk/recompute!))
 
-(defn ->test-var-info [{:kaocha.testable/keys [meta] :kaocha.var/keys [name var]}]
-  (let [{:kaocha/keys [pending skip]} meta]
-    (assoc meta :var var :name name
-           :assertions []
-           :status (cond pending :pending skip :skip 'else :queued))))
-
-(defn test-plan->test-nss
-  "Takes a kaocha test plan, gives a sequence of namespaces"
-  [test-plan]
-  (map
-   (fn [{:kaocha.ns/keys [name ns] :kaocha.test-plan/keys [tests]}]
-     {:ns ns
-      :name name
-      :status :queued
-      :file (clerk.analyzer/ns->file ns)
-      :test-vars (keep ->test-var-info tests)})
-   (-> test-plan :kaocha.test-plan/tests first :kaocha.test-plan/tests)))
-
-(defn ->test-var-name [e] (some-> e :kaocha/testable :kaocha.var/name))
-(defn ->test-ns-name  [e]
-  (or (some-> e :kaocha/testable :kaocha.ns/name)
-      (some-> e :kaocha/testable :kaocha.var/name namespace symbol)))
-
-#_
-(defn ->assertion-data
-  [{:as event :keys [type] :kaocha/keys [testable] ex :kaocha.result/exception}]
-  (let [{:kaocha.var/keys [name var]} testable]
-    (-> (select-keys event [:actual :expected :message :file :line])
-        (cond-> ex (assoc :exception ex))
-        (cond-> (= :kaocha.type.var/zero-assertions type) (assoc :message "This test has no assertions"))
-        (assoc :var var :name name
-               :status (case type
-                         :kaocha.type.var/zero-assertions :fail
-                         :kaocha.report/one-arg-eql :fail
-                         type)))))
-
 (defn ->assertion-data
   [current-test-var {:as event :keys [type]}]
   (assoc event :var current-test-var
@@ -107,7 +71,7 @@
                   (fn [test-ns]
                     (update test-ns :test-vars (vec-update-if #(= varn (:name %)) f)))))
 
-(defn update-contexts [{:as state :keys [seen-ctxs]} event]
+(defn update-contexts [{:as state :keys [seen-ctxs current-test-var]}]
   (let [ctxs (remove seen-ctxs t/*testing-contexts*)
         depth (count (filter seen-ctxs t/*testing-contexts*))
         ctx-items (map-indexed (fn [i c] {:type :ctx
@@ -115,7 +79,7 @@
                                           :ctx/depth (+ depth i)}) (reverse ctxs))]
     (-> state
         (update :seen-ctxs into ctxs)
-        (update-test-var (->test-var-name event)
+        (update-test-var (symbol current-test-var)
                          #(update % :assertions into ctx-items)))))
 
 ;;(kaocha.hierarchy/derive! :pass :assertion)
@@ -138,11 +102,18 @@
       (assoc :current-test-var var)
       (update-test-var (symbol var) #(assoc % :status :executing))))
 
-(defmethod build-test-state :pass [{:as state :keys [current-test-var]} event]
+(defn update-var-assertions [{:as state :keys [current-test-var]} event]
   (-> state
-      #_ ;; TODO
-      (update-contexts event)
+      update-contexts
       (update-test-var (symbol current-test-var) #(update % :assertions conj (->assertion-data current-test-var event)))))
+
+(defmethod build-test-state :pass [state event]
+  (prn :pass (:type event))
+  (update-var-assertions state event))
+
+(defmethod build-test-state :fail [state event] (update-var-assertions state event))
+
+(defmethod build-test-state :error [state event] (update-var-assertions state event))
 
 (defn get-coll-status [coll]
   (let [statuses (map :status coll)]
@@ -160,9 +131,7 @@
     (binding [t/report (fn report [{:as event :keys [type]}]
                          #_(prn :event type event)
                          (swap! !test-run-events conj event)
-                         (swap! !test-report-state
-                                #(-> % (build-test-state event)
-                                     ))
+                         (swap! !test-report-state #'build-test-state event)
                          (with-out-str
                            (clerk/recompute!)))]
       (t/run-tests (the-ns 'demo.a-test))))
@@ -171,13 +140,7 @@
   (ns-unmap *ns* 'build-test-state)
   (test-plan)
 
-  #_
-  (defmethod build-test-state :begin-test-suite [_state {:as event :kaocha/keys [test-plan]}]
-    (swap! !test-run-events conj event)
-    (assoc initial-state :test-nss (test-plan->test-nss test-plan))))
-
-(comment
-  #_ ;; TODO
+  ;; TODO
   (update :summary
           (fn [m]
             (cond
@@ -300,47 +263,7 @@
 
 {::clerk/visibility {:code :hide :result :hide}}
 (comment
-  (def cfg
-    {:reporter [report]
-     :capture-output? false
-     :color? true
-     :randomize? false})
-
-  (kaocha.repl/run :unit)
   (reset-state!)
 
-  (kaocha.repl/config)
-  (-> (kaocha.repl/config)
-      :kaocha/tests)
-
-  (kaocha.repl/config cfg)
-
-  (kaocha.api/test-plan (kaocha.repl/config))
-  (kaocha.testable/load (first (:kaocha/tests (kaocha.repl/config))))
-
-
-
-  (test-plan->test-nss (kaocha.repl/test-plan))
-  (test-plan->test-nss (kaocha.repl/test-plan cfg))
-
-  (map :type  @!test-run-events)
-  (count  @!test-run-events)
-
-  (do
-    (reset! !test-report-state
-            (reduce build-test-state {}
-                    (take 5 @!test-run-events)))
-    (clerk/recompute!))
-
-  @!test-report-state
-
-  ;; inspect events
-  (defn get-event [type]
-    (some #(when (= type (:type %)) %)
-          @!test-run-events))
-  (-> (get-event :error)  )
-
-  (nextjournal.clerk/clear-cache!)
-  (clerk/serve! {:port 7788})
-  (clerk/show! 'nextjournal.clerk.kaocha)
-  )
+  ;; used to use kaocha
+  (kaocha.repl/test-plan))
