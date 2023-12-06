@@ -245,13 +245,12 @@
                                                   (clerk/with-viewer clerk/table
                                                                      (into [] (map (juxt (comp str/capitalize name first) second)) %))))))))
    :render-fn '(fn [{:keys [test-nss summary]} opts]
-                 (v/html
-                  [:div
-                   (when (:nextjournal/value summary)
-                     [v/inspect summary])
-                   (if-some [xs (seq (:nextjournal/value test-nss))]
-                     (into [:div.flex.flex-col.pt-2] (v/inspect-children opts) xs)
-                     [:h5 [:em.slate-100 "Waiting for tests to run..."]])]))})
+                 [:div
+                  (when (:nextjournal/value summary)
+                    [nextjournal.clerk.render/inspect summary])
+                  (if-some [xs (seq (:nextjournal/value test-nss))]
+                    (into [:div.flex.flex-col.pt-2] (nextjournal.clerk.render/inspect-children opts) xs)
+                    [:h5 [:em.slate-100 "Waiting for tests to run..."]])])})
 
 
 ;; Eval the commented form to get started (FIXME: can't it be part of notebook?)
@@ -299,6 +298,6 @@
   (-> (get-event :error)  )
 
   (nextjournal.clerk/clear-cache!)
-  (clerk/serve! {:port 8888})
+  (clerk/serve! {:port 7788})
   (clerk/show! 'nextjournal.clerk.kaocha)
   )

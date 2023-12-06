@@ -1,4 +1,4 @@
-{:deps {io.github.nextjournal/clerk {:mvn/version "0.11.603"}
+{:deps {io.github.nextjournal/clerk {:git/sha "ff2bf8b0b5d596286fb1d22408b14456fee2dbf7"}
         lambdaisland/kaocha {:mvn/version "1.66.1034"}}
  :aliases
  {:dev {:extra-paths ["dev"]}
