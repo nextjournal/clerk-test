@@ -2,15 +2,8 @@
 (ns nextjournal.clerk.kaocha
   {:nextjournal.clerk/visibility {:code :hide :result :hide}
    :nextjourna.clerk/no-cache true}
-  (:require [clojure.test :as t :refer [deftest testing is]]
-            [kaocha.report :as r]
-            [kaocha.repl]
-            [kaocha.history]
-            [kaocha.hierarchy]
-            [kaocha.config :as config]
-            [kaocha.api :as kaocha]
-            [lambdaisland.deep-diff :as ddiff]
-            [kaocha.matcher-combinators]
+  (:require [babashka.fs :as fs]
+            [clojure.test :as t :refer [deftest testing is]]
             [matcher-combinators.test]
             [nextjournal.clerk :as clerk]
             [nextjournal.clerk.builder-ui :as builder-ui]
@@ -18,14 +11,46 @@
             [nextjournal.clerk.viewer :as viewer]
             [clojure.string :as str]))
 
-(def initial-state {:test-nss [] :seen-ctxs #{} :summary {}})
+(defn ns+var->info [ns var]
+  (let [{:as m :keys [test pending skip]} (meta var)]
+    (when test
+      (assoc m :var var :name (symbol var) :ns ns
+               :assertions []
+               :status (cond pending :pending skip :skip 'else :queued)))))
+
+(defn ns->ns-test-data
+  "Takes a kaocha test plan, gives a sequence of namespaces"
+  [ns]
+  {:ns ns
+   :name (ns-name ns)
+   :status :queued
+   :file (clerk.analyzer/ns->file ns)
+   :test-vars (keep (partial ns+var->info ns) (vals (ns-publics ns)))})
+
+(defn test-nss []
+  (let [test-set (into #{} (map (comp str fs/absolutize)) (fs/glob "test" "**/*.clj"))]
+    (into []
+          (filter (comp test-set nextjournal.clerk.analyzer/ns->file))
+          (all-ns))))
+
+(defn test-plan []
+  (map ns->ns-test-data (test-nss)))
+
+#_(test-plan)
+
+(defn initial-state []
+  ;; TODO: maybe populate plan in an explicit step prior to running tests
+  {:test-nss (test-plan)
+   :seen-ctxs #{}
+   :current-test-var nil
+   :summary {}})
 
 (defonce !test-run-events (atom []))
-(defonce !test-report-state (atom initial-state))
+(defonce !test-report-state (atom (initial-state)))
 
 (defn reset-state! []
   (reset! !test-run-events [])
-  (reset! !test-report-state initial-state)
+  (reset! !test-report-state (initial-state))
   (clerk/recompute!))
 
 (defn ->test-var-info [{:kaocha.testable/keys [meta] :kaocha.var/keys [name var]}]
@@ -51,6 +76,7 @@
   (or (some-> e :kaocha/testable :kaocha.ns/name)
       (some-> e :kaocha/testable :kaocha.var/name namespace symbol)))
 
+#_
 (defn ->assertion-data
   [{:as event :keys [type] :kaocha/keys [testable] ex :kaocha.result/exception}]
   (let [{:kaocha.var/keys [name var]} testable]
@@ -63,8 +89,14 @@
                          :kaocha.report/one-arg-eql :fail
                          type)))))
 
+(defn ->assertion-data
+  [current-test-var {:as event :keys [type]}]
+  (assoc event :var current-test-var
+               :name (symbol current-test-var)
+               :status type))
+
 (defn vec-update-if [pred f & args]
-  (partial into [] (map (fn [item] (if-not (pred item) item (apply f item args))))))
+  (partial mapv (fn [item] (if-not (pred item) item (apply f item args)))))
 
 (defn update-test-ns [state nsn f & args]
   (update state :test-nss (vec-update-if #(= nsn (:name %)) f)))
@@ -72,7 +104,8 @@
 (defn update-test-var [state varn f]
   (update-test-ns state
                   (-> varn namespace symbol)
-                  (fn [test-ns] (update test-ns :test-vars (vec-update-if #(= varn (:name %)) f)))))
+                  (fn [test-ns]
+                    (update test-ns :test-vars (vec-update-if #(= varn (:name %)) f)))))
 
 (defn update-contexts [{:as state :keys [seen-ctxs]} event]
   (let [ctxs (remove seen-ctxs t/*testing-contexts*)
@@ -85,71 +118,73 @@
         (update-test-var (->test-var-name event)
                          #(update % :assertions into ctx-items)))))
 
-(kaocha.hierarchy/derive! :pass :assertion)
-(kaocha.hierarchy/derive! :fail :assertion)
-(kaocha.hierarchy/derive! :error :assertion)
-(kaocha.hierarchy/derive! :kaocha.type.var/zero-assertions :assertion)
-(kaocha.hierarchy/derive! :kaocha.report/one-arg-eql :assertion)
+;;(kaocha.hierarchy/derive! :pass :assertion)
+;;(kaocha.hierarchy/derive! :fail :assertion)
+;;(kaocha.hierarchy/derive! :error :assertion)
+;;(kaocha.hierarchy/derive! :kaocha.type.var/zero-assertions :assertion)
+;;(kaocha.hierarchy/derive! :kaocha.report/one-arg-eql :assertion)
 
-#_ (ns-unmap *ns* 'build-test-state )
-(defmulti build-test-state (fn bts-dispatch [_state {:as _event :keys [type]}] type)
-          :hierarchy #'kaocha.hierarchy/hierarchy)
-
+#_ (ns-unmap *ns* 'build-test-state)
+(defmulti build-test-state (fn bts-dispatch [_state {:as _event :keys [type]}] type))
 (defmethod build-test-state :default [state event]
-  (println :Unhandled (:type event) (->test-ns-name event) (->test-var-name event))
+  #_ (println :Unhandled event)
   state)
 
-(defmethod build-test-state :begin-test-suite [_state {:as event :kaocha/keys [test-plan]}]
-  (swap! !test-run-events conj event)
-  (assoc initial-state :test-nss (test-plan->test-nss test-plan)))
-
 (defmethod build-test-state :begin-test-ns [state event]
-  (swap! !test-run-events conj event)
-  (update-test-ns state (->test-ns-name event) #(assoc % :status :executing)))
+  (update-test-ns state (ns-name (:ns event)) #(assoc % :status :executing)))
 
-(defmethod build-test-state :begin-test-var [state event]
-  (swap! !test-run-events conj event)
-  (update-test-var state (->test-var-name event) #(assoc % :status :executing)))
+(defmethod build-test-state :begin-test-var [state {:keys [var]}]
+  (-> state
+      (assoc :current-test-var var)
+      (update-test-var (symbol var) #(assoc % :status :executing))))
+
+(defmethod build-test-state :pass [{:as state :keys [current-test-var]} event]
+  (-> state
+      #_ ;; TODO
+      (update-contexts event)
+      (update-test-var (symbol current-test-var) #(update % :assertions conj (->assertion-data current-test-var event)))))
+
+(defn get-coll-status [coll]
+  (let [statuses (map :status coll)]
+    (or (some #{:error} statuses) (some #{:fail} statuses) :pass)))
+
+(defmethod build-test-state :end-test-var [state {:keys [var]}]
+  (update-test-var state (symbol var) #(assoc % :status (get-coll-status (:assertions %)))))
+
+(defmethod build-test-state :end-test-ns [state {:keys [ns]}]
+  (update-test-ns state (ns-name ns) #(assoc % :status (get-coll-status (:test-vars %)))))
 
 (comment
-  (remove-all-methods build-test-state))
+  (do
+    (reset-state!)
+    (binding [t/report (fn report [{:as event :keys [type]}]
+                         #_(prn :event type event)
+                         (swap! !test-run-events conj event)
+                         (swap! !test-report-state
+                                #(-> % (build-test-state event)
+                                     ))
+                         (with-out-str
+                           (clerk/recompute!)))]
+      (t/run-tests (the-ns 'demo.a-test))))
 
-(defmethod build-test-state :assertion [state event]
-  (swap! !test-run-events conj event)
-  (-> state
-      (update-contexts event)
-      (update-test-var (->test-var-name event) #(update % :assertions conj (->assertion-data event)))))
+  (remove-all-methods build-test-state)
+  (ns-unmap *ns* 'build-test-state)
+  (test-plan)
 
-(defmethod build-test-state :end-test-var [state event]
-  (swap! !test-run-events conj event)
-  (update-test-var state (->test-var-name event)
-                   (fn [{:as test-var :keys [assertions]}]
-                     (assoc test-var :status
-                            (as-> (map :status assertions) as
-                              (or (some #{:error} as) (some #{:fail} as) :pass))))))
+  #_
+  (defmethod build-test-state :begin-test-suite [_state {:as event :kaocha/keys [test-plan]}]
+    (swap! !test-run-events conj event)
+    (assoc initial-state :test-nss (test-plan->test-nss test-plan))))
 
-(defmethod build-test-state :end-test-ns [state event]
-  (swap! !test-run-events conj event)
-  (update-test-ns state (->test-ns-name event)
-                  (fn [{:as test-ns :keys [test-vars]}]
-                    (assoc test-ns :status
-                           (as-> (map :status test-vars) ss
-                             (or (some #{:error} ss) (some #{:fail} ss) :pass))))))
-
-#_ 'the-kaocha-reporter
-#_ (ns-unmap *ns* 'notebook-reporter)
-(defn report [{:as event :keys [type]}]
-  (swap! !test-report-state
-         #(-> %
-              (build-test-state event)
-              (update :summary
-                      (fn [m]
-                        (cond
-                          (some #{type} [:pass :error :kaocha/pending]) (update m type (fnil inc 0))
-                          (kaocha.hierarchy/isa? type :kaocha/begin-test) (update m :test (fnil inc 0))
-                          (kaocha.hierarchy/fail-type? event) (update m :fail (fnil inc 0))
-                          :else m)))))
-  (clerk/recompute!))
+(comment
+  #_ ;; TODO
+  (update :summary
+          (fn [m]
+            (cond
+              (some #{type} [:pass :error :kaocha/pending]) (update m type (fnil inc 0))
+              (kaocha.hierarchy/isa? type :kaocha/begin-test) (update m :test (fnil inc 0))
+              (kaocha.hierarchy/fail-type? event) (update m :fail (fnil inc 0))
+              :else m))))
 
 (defn bg-class [status]
   (case status
@@ -191,7 +226,7 @@
      [:div.h-0.basis-full]
      [:div.text-slate-500.my-1.mr-2 {:class (when (< 0 depth) (str "pl-" (* 4 depth)))} text]]
     (case status
-      :pass [:div.ml-1.my-1 (builder-ui/checkmark-svg {:size 20})]
+      :pass [:div.ml-1.my-1.text-green-600 (builder-ui/checkmark-svg {:size 20})]
       :fail [:div.flex.flex-col.p-1.my-2.w-full
              [:div.w-fit
               [:em.text-red-600.font-medium (str name ":" line)]
@@ -261,7 +296,7 @@
 
 {::clerk/visibility {:code :hide :result :show}}
 (clerk/with-viewer test-suite-viewer
-                   @!test-report-state)
+  @!test-report-state)
 
 {::clerk/visibility {:code :hide :result :hide}}
 (comment
@@ -275,7 +310,15 @@
   (reset-state!)
 
   (kaocha.repl/config)
+  (-> (kaocha.repl/config)
+      :kaocha/tests)
+
   (kaocha.repl/config cfg)
+
+  (kaocha.api/test-plan (kaocha.repl/config))
+  (kaocha.testable/load (first (:kaocha/tests (kaocha.repl/config))))
+
+
 
   (test-plan->test-nss (kaocha.repl/test-plan))
   (test-plan->test-nss (kaocha.repl/test-plan cfg))
