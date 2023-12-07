@@ -23,6 +23,6 @@
   (binding [test/report clerk.test/report]
     (test/run-all-tests #"demo\..\-test"))
 
-  ;; originally used to be a reported for lambdaisland/kaocha {:mvn/version "1.66.1034"}
+  ;; used to be a reported for lambdaisland/kaocha {:mvn/version "1.66.1034"}
   #_
   (kaocha.repl/run :unit {:reporter [clerk.kaocha/report]}))

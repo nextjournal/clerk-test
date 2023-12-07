@@ -16,7 +16,7 @@ A [Clerk](https://github.com/nextjournal/clerk) test reporter for clojure.test.
 
 (clerk/serve! {:port 7788})
 
-(clerk/show! 'nextjournal.clerk.kaocha)
+(clerk/show! 'nextjournal.clerk.test)
 
 (binding [test/report clerk.test/report]
   (test/run-tests (the-ns 'test-1)

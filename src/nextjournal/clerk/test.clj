@@ -19,7 +19,6 @@
                :status (cond pending :pending skip :skip 'else :queued)))))
 
 (defn ns->ns-test-data
-  "Takes a kaocha test plan, gives a sequence of namespaces"
   [ns]
   {:ns ns
    :name (ns-name ns)
@@ -28,12 +27,14 @@
    :test-vars (keep (partial ns+var->info ns) (vals (ns-publics ns)))})
 
 (defn test-nss []
+  ;; TODO: allow to specify paths
   (let [test-set (into #{} (map (comp str fs/absolutize)) (fs/glob "test" "**/*.clj"))]
     (into []
           (filter (comp test-set nextjournal.clerk.analyzer/ns->file))
           (all-ns))))
 
 (defn test-plan []
+  ;; inspired by (kaocha.repl/test-plan)
   (map ns->ns-test-data (test-nss)))
 
 #_(test-plan)
@@ -90,12 +91,6 @@
               (= :begin-test-var type) (update m :test (fnil inc 0))
               (= :fail type) (update m :fail (fnil inc 0))
               :else m))))
-
-;;(kaocha.hierarchy/derive! :pass :assertion)
-;;(kaocha.hierarchy/derive! :fail :assertion)
-;;(kaocha.hierarchy/derive! :error :assertion)
-;;(kaocha.hierarchy/derive! :kaocha.type.var/zero-assertions :assertion)
-;;(kaocha.hierarchy/derive! :kaocha.report/one-arg-eql :assertion)
 
 #_ (ns-unmap *ns* 'build-test-state)
 (defmulti build-test-state (fn bts-dispatch [_state {:as _event :keys [type]}] type))
@@ -254,20 +249,11 @@
                     (into [:div.flex.flex-col.pt-2] (nextjournal.clerk.render/inspect-children opts) xs)
                     [:h5 [:em.slate-100 "Waiting for tests to run..."]])])})
 
-
-;; Eval the commented form to get started (FIXME: can't it be part of notebook?)
-{::clerk/visibility {:code :show :result :hide}}
-(comment
-  (kaocha.repl/run :unit {:reporter [report]
-                          :kaocha.plugin.randomize/randomize? false}))
-
 {::clerk/visibility {:code :hide :result :show}}
 (clerk/with-viewer test-suite-viewer
   @!test-report-state)
 
+
 {::clerk/visibility {:code :hide :result :hide}}
 (comment
-  (reset-state!)
-
-  ;; used to use kaocha
-  (kaocha.repl/test-plan))
+  (reset-state!))
