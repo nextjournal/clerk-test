@@ -2,6 +2,7 @@
         ;; TODO: check if needed
         nubank/matcher-combinators {:mvn/version "3.3.1"}}
  :aliases
- {:dev {:extra-paths ["dev" "test"]}
+ {:dev {:extra-paths ["dev" "test" "notebooks"]}
   :test {:extra-paths ["dev" "test"]
-         :exec-fn user/exec-fn}}}
+         :exec-fn clerk/build!
+         :exec-args {:index "notebooks/test_runner.clj"}}}}

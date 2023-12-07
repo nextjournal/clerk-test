@@ -26,16 +26,20 @@
    :file (clerk.analyzer/ns->file ns)
    :test-vars (keep (partial ns+var->info ns) (vals (ns-publics ns)))})
 
+(defn test-paths []
+  (into #{}
+        (map fs/absolutize)
+        (fs/glob "test" "**/*.clj")))
+
 (defn test-nss []
-  ;; TODO: allow to specify paths
-  (let [test-set (into #{} (map (comp str fs/absolutize)) (fs/glob "test" "**/*.clj"))]
-    (into []
-          (filter (comp test-set nextjournal.clerk.analyzer/ns->file))
-          (all-ns))))
+  ;; TODO: allow to specify test paths
+  (filter (comp (test-paths)
+                #(some-> % nextjournal.clerk.analyzer/ns->file fs/absolutize))
+          (all-ns)))
 
 (defn test-plan []
-  ;; inspired by (kaocha.repl/test-plan)
-  (map ns->ns-test-data (test-nss)))
+  ;; inspired by kaocha.repl/test-plan
+  (mapv ns->ns-test-data (test-nss)))
 
 #_(test-plan)
 
@@ -46,8 +50,13 @@
    :current-test-var nil
    :summary {}})
 
+#_(keep :name (tree-seq coll? (some-fn :test-nss :test-vars) (initial-state)))
+
 (defonce !test-run-events (atom []))
 (defonce !test-report-state (atom (initial-state)))
+
+(defn make-test-plan! []
+  (reset! !test-report-state (initial-state)))
 
 (defn reset-state! []
   (reset! !test-run-events [])
@@ -92,10 +101,10 @@
               (= :fail type) (update m :fail (fnil inc 0))
               :else m))))
 
-#_ (ns-unmap *ns* 'build-test-state)
+#_(ns-unmap *ns* 'build-test-state)
 (defmulti build-test-state (fn bts-dispatch [_state {:as _event :keys [type]}] type))
 (defmethod build-test-state :default [state event]
-  #_ (println :Unhandled event)
+  #_(println :Unhandled event)
   state)
 
 (defmethod build-test-state :begin-test-ns [state event]
@@ -141,9 +150,10 @@
     (binding [t/report report]
       (t/run-tests (the-ns 'demo.a-test)
                    (the-ns 'demo.b-test)
-                   (the-ns 'demo.c-test))
-      #_ (t/run-all-tests)))
+                   (the-ns 'demo.c-test)))
+    :done)
 
+  (clerk/show! 'nextjournal.clerk.test)
   (remove-all-methods build-test-state)
   (ns-unmap *ns* 'build-test-state)
   (test-plan))
@@ -240,7 +250,7 @@
                               (update :test-nss (partial map (partial viewer/with-viewer test-ns-viewer)))
                               (update :summary #(when (seq %)
                                                   (clerk/with-viewer clerk/table
-                                                                     (into [] (map (juxt (comp str/capitalize name first) second)) %))))))))
+                                                    (into [] (map (juxt (comp str/capitalize name first) second)) %))))))))
    :render-fn '(fn [{:keys [test-nss summary]} opts]
                  [:div
                   (when (:nextjournal/value summary)
