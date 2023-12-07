@@ -3,13 +3,14 @@
   {:nextjournal.clerk/visibility {:code :hide :result :hide}
    :nextjourna.clerk/no-cache true}
   (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :as t]
             [matcher-combinators.test]
             [nextjournal.clerk :as clerk]
             [nextjournal.clerk.builder-ui :as builder-ui]
             [nextjournal.clerk.analyzer :as clerk.analyzer]
             [nextjournal.clerk.viewer :as viewer]
-            [clojure.string :as str]))
+            [nextjournal.clerk.webserver :as webserver]))
 
 (defn ns+var->info [ns var]
   (let [{:as m :keys [test pending skip]} (meta var)]
@@ -140,8 +141,8 @@
 
 (defn report [event]
   (swap! !test-run-events conj event)
-  (swap! !test-report-state #'build-test-state event)
-  (with-out-str
+  (swap! !test-report-state build-test-state event)
+  (when @webserver/!doc
     (clerk/recompute!)))
 
 (comment
@@ -150,8 +151,7 @@
     (binding [t/report report]
       (t/run-tests (the-ns 'demo.a-test)
                    (the-ns 'demo.b-test)
-                   (the-ns 'demo.c-test)))
-    :done)
+                   (the-ns 'demo.c-test))))
 
   (clerk/show! 'nextjournal.clerk.test)
   (remove-all-methods build-test-state)
@@ -265,5 +265,16 @@
 
 
 {::clerk/visibility {:code :hide :result :hide}}
+
+(defn status-report
+  "repl helper for summarizing test results"
+  [state]
+  (keep (fn [{:keys [name assertions]}]
+          (when (and name assertions)
+            {:name name :status (get-coll-status assertions)}))
+        (tree-seq map?
+                  (some-fn :assertions :test-vars :test-nss)
+                  state)))
+
 (comment
   (reset-state!))
